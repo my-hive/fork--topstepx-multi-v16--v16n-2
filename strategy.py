@@ -1,31 +1,28 @@
-"""RTY/YM relative-value reversion: 60-session causal RTH ratio z-score, hedged pair next RTH.
-Hypothesis: small-vs-bluechip relative mispricing mean-reverts after extreme daily ratio departures."""
+"""Corn/soy ratio reversion: fade 40-session causal ZC/ZS close-ratio z-score in next RTH, hedged legs.
+Hypothesis: supply/demand cross-substitution makes extreme daily ZC/ZS departures mean-revert."""
 import numpy as np
 import pandas as pd
 
-FAMILY = "index-small-large-relative-reversion"
-PARAMS = {"lookback": 60, "z_entry": 2.0, "entry_sec": 30600, "exit_sec": 54000, "risk": 280}
+FAMILY = "grain-corn-soy-ratio-reversion"
+PARAMS = {"lookback": 40, "z_entry": 1.5, "entry_sec": 30600, "exit_sec": 54000, "risk": 280}
 
 
 def _positions(panel):
-    out = {}
-    for sym, df in panel.items():
-        out[sym] = np.zeros(len(df), dtype=np.int64)
-    if "RTY" not in panel or "YM" not in panel:
+    out = {sym: np.zeros(len(df), dtype=np.int64) for sym, df in panel.items()}
+    if "ZC" not in panel or "ZS" not in panel:
         return out, None
-    rty, ym = panel["RTY"], panel["YM"]
-    rty_last = rty.groupby("session", sort=False).close.last()
-    ym_last = ym.groupby("session", sort=False).close.last()
-    common = rty_last.index.intersection(ym_last.index)
+    zc, zs = panel["ZC"], panel["ZS"]
+    c1 = zc.groupby("session", sort=False).close.last()
+    c2 = zs.groupby("session", sort=False).close.last()
+    common = c1.index.intersection(c2.index)
     if len(common) < PARAMS["lookback"] + 2:
         return out, None
-    ratio = np.log(rty_last.loc[common] / ym_last.loc[common])
+    ratio = np.log(c1.loc[common] / c2.loc[common])
     z = (ratio - ratio.rolling(PARAMS["lookback"]).mean()) / ratio.rolling(PARAMS["lookback"]).std()
     side = pd.Series(0.0, index=common)
     side[z > PARAMS["z_entry"]] = -1.0
     side[z < -PARAMS["z_entry"]] = 1.0
-    side = side.shift(1).fillna(0.0)
-    return out, side
+    return out, side.shift(1).fillna(0.0)
 
 
 def _apply(panel, out, side, key, sign):
@@ -46,8 +43,8 @@ def signals(panel):
     out, side = _positions(panel)
     if side is None:
         return out
-    _apply(panel, out, side, "RTY", 1)
-    _apply(panel, out, side, "YM", -1)
+    _apply(panel, out, side, "ZC", 1)
+    _apply(panel, out, side, "ZS", -1)
     return out
 
 
