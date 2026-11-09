@@ -1,27 +1,28 @@
-"""PL overnight-gap continuation: one trade per session at the 08:20 CT metals open, exit 13:20 CT."""
+"""SI cash-session gap reversion: fade 09:00 CT gap versus prior session close."""
 import numpy as np
-FAMILY = "metals-pl-gap-follow"
-PARAMS = {"ref_sec": 48000, "entry_sec": 30000, "exit_sec": 48000, "min_gap_ticks": 20}
+
+FAMILY = "metals-gap-close-reversion"
+PARAMS = {"entry_sec": 32400, "exit_sec": 54540}
 
 def signals(panel):
-    res = {}
-    tick = {"PL": 0.1}
+    result = {}
     for sym, df in panel.items():
-        c, s = df.close.to_numpy(), df.ct_sec.to_numpy()
-        out = np.zeros(len(df), dtype=np.int64)
-        prev_ref = None
-        for sess, ix in df.groupby('session', sort=False).indices.items():
-            ix = np.asarray(ix)
-            en = ix[s[ix] >= PARAMS["entry_sec"]]
-            if prev_ref is not None and len(en):
-                gap = c[en[0]] - prev_ref
-                if abs(gap) >= PARAMS["min_gap_ticks"] * tick.get(sym, 0.1):
-                    win = ix[(s[ix] > PARAMS["entry_sec"]) & (s[ix] < PARAMS["exit_sec"])]
-                    out[win] = int(np.sign(gap))
-            ref = ix[s[ix] <= PARAMS["ref_sec"]]
-            if len(ref): prev_ref = c[ref[-1]]
-        res[sym] = out
-    return res
+        close = df.close.to_numpy()
+        sec = df.ct_sec.to_numpy()
+        target = np.zeros(len(df), dtype=np.int64)
+        prior_close = None
+        for _, indices in df.groupby("session", sort=False).indices.items():
+            ix = np.asarray(indices)
+            at_entry = ix[sec[ix] >= PARAMS["entry_sec"]]
+            if prior_close is not None and len(at_entry):
+                gap = close[at_entry[0]] - prior_close
+                window = ix[(sec[ix] >= PARAMS["entry_sec"]) & (sec[ix] < PARAMS["exit_sec"])]
+                target[window] = -int(np.sign(gap))
+            closes = ix[sec[ix] <= PARAMS["exit_sec"]]
+            if len(closes):
+                prior_close = close[closes[-1]]
+        result[sym] = target
+    return result
 
 def entry_risk(panel):
     return {sym: np.zeros(len(df)) for sym, df in panel.items()}
