@@ -1,28 +1,35 @@
-"""Gold daily trend regime: causal 20-session return selects RTH direction.
-Hypothesis: slow macro trend persists through liquid COMEX US session, avoiding overnight noise."""
+"""6E First-Friday NFP release momentum drift: enter 07:45 CT if 06:45-07:45 move > 0, exit 14:45 CT."""
 import numpy as np
+import pandas as pd
 
-FAMILY = "metals-daily-trend-rth"
-PARAMS = {"lookback_sessions": 20, "entry_sec": 30600, "exit_sec": 54000, "risk": 280}
+FAMILY = "fx-nfp-session-momentum"
+PARAMS = {"entry_sec": 27900, "exit_sec": 53100, "risk": 280}
 
 
 def signals(panel):
-    result = {}
-    for sym, df in panel.items():
-        sec = df.ct_sec.to_numpy()
-        close = df.close.to_numpy()
-        session = df.session.to_numpy()
-        target = np.zeros(len(df), dtype=np.int64)
-        starts = np.r_[0, np.flatnonzero(session[1:] != session[:-1]) + 1, len(df)]
-        closes = close[starts[1:] - 1]
-        direction = np.zeros(len(closes), dtype=np.int64)
-        direction[PARAMS["lookback_sessions"]:] = np.sign(closes[PARAMS["lookback_sessions"] - 1:-1] - closes[:-PARAMS["lookback_sessions"]])
-        for k, (a, b) in enumerate(zip(starts[:-1], starts[1:])):
-            ix = np.arange(a, b)
-            target[ix[(sec[ix] >= PARAMS["entry_sec"]) & (sec[ix] < PARAMS["exit_sec"])]] = direction[k]
-        result[sym] = target
-    return result
+    df = panel["6E"]
+    sec = df.ct_sec.to_numpy()
+    close = df.close.to_numpy()
+    sess = df.session.to_numpy()
+    starts = np.r_[0, np.flatnonzero(sess[1:] != sess[:-1]) + 1, len(df)]
+    target = np.zeros(len(df), dtype=np.int64)
+    for a, b in zip(starts[:-1], starts[1:]):
+        s_date = pd.Timestamp(sess[a])
+        if s_date.dayofweek != 4 or s_date.day > 7:
+            continue
+        s_sec = sec[a:b]
+        s_c = close[a:b]
+        pre = s_c[s_sec < 26100]   # before 07:15 CT
+        post = s_c[s_sec < 27900]  # before 07:45 CT
+        if not len(pre) or not len(post):
+            continue
+        side = int(np.sign(post[-1] - pre[-1]))
+        if not side:
+            continue
+        ix = np.arange(a, b)
+        target[ix[(s_sec >= PARAMS["entry_sec"]) & (s_sec < PARAMS["exit_sec"])]] = side
+    return {"6E": target}
 
 
 def entry_risk(panel):
-    return {sym: np.full(len(df), PARAMS["risk"], dtype=float) for sym, df in panel.items()}
+    return {s: np.full(len(df), PARAMS["risk"], dtype=float) for s, df in panel.items()}
