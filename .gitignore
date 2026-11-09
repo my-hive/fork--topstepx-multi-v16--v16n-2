@@ -5,3 +5,6 @@ run.log
 report*.json
 fills*.jsonl
 .v3-sandbox-test.*/
+e*.json
+fills*.jsonl
+report.json
