@@ -1,25 +1,23 @@
-"""CAD futures weekly reversal: fade trailing five-session causal return during RTH.
-Hypothesis: commodity-FX weekly positioning mean-reverts in liquid US session."""
+"""MNQ Monday post-10:00 CT long drift."""
 import numpy as np
+import pandas as pd
 
-FAMILY = "fx-cad-weekly-momentum-reversal"
-PARAMS = {"lookback_sessions": 5, "entry_sec": 30600, "exit_sec": 54000, "risk": 280}
-
+FAMILY = "equity-dow-seasonality"
+PARAMS = {"entry_sec": 36000, "exit_sec": 54540, "target_dow": 0}
 
 def signals(panel):
-    df = panel["6M"]
-    sec, close, sess = df.ct_sec.to_numpy(), df.close.to_numpy(), df.session.to_numpy()
-    starts = np.r_[0, np.flatnonzero(sess[1:] != sess[:-1]) + 1, len(df)]
-    ends = starts[1:] - 1
-    k = PARAMS["lookback_sessions"]
-    side = np.zeros(len(ends), dtype=np.int64)
-    side[k:] = -np.sign(close[ends[k - 1:-1]] - close[ends[:-k]])
-    target = np.zeros(len(df), dtype=np.int64)
-    for i, (a, b) in enumerate(zip(starts[:-1], starts[1:])):
-        ix = np.arange(a, b)
-        target[ix[(sec[ix] >= PARAMS["entry_sec"]) & (sec[ix] < PARAMS["exit_sec"])]] = side[i]
-    return {"6M": target}
-
+    result = {}
+    for sym, df in panel.items():
+        sec = df.ct_sec.to_numpy()
+        target = np.zeros(len(df), dtype=np.int64)
+        for _, indices in df.groupby("session", sort=False).indices.items():
+            ix = np.asarray(indices)
+            session_date = pd.to_datetime(df.session.iloc[ix[0]])
+            if session_date.dayofweek == PARAMS["target_dow"]:
+                window = ix[(sec[ix] >= PARAMS["entry_sec"]) & (sec[ix] < PARAMS["exit_sec"])]
+                target[window] = 1
+        result[sym] = target
+    return result
 
 def entry_risk(panel):
-    return {s: np.full(len(df), PARAMS["risk"], dtype=float) for s, df in panel.items()}
+    return {sym: np.full(len(df), 200.0) for sym, df in panel.items()}
